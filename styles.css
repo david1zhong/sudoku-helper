@@ -1,0 +1,568 @@
+/* Self-hosted Newsreader (latin, variable 400-700), no external requests. */
+@font-face {
+  font-family: 'Newsreader';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('fonts/newsreader-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Newsreader';
+  font-style: italic;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('fonts/newsreader-latin-italic.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+* { box-sizing: border-box; }
+
+/* the hidden attribute always wins, even over explicit display values */
+[hidden] { display: none !important; }
+
+:root {
+  /* graphite & paper, with a teacher's-viridian brand
+     neutrals carry a whisper of the brand hue (170), never warm-cream */
+  --bg: oklch(97% 0.005 170);
+  --card: oklch(99.4% 0.002 170);
+  --ink: oklch(25% 0.015 170);
+  --muted: oklch(43% 0.02 170);
+  --line: oklch(86% 0.008 170);
+  --line-heavy: oklch(34% 0.015 170);
+
+  --accent: oklch(46% 0.09 165);        /* viridian: the way forward */
+  --accent-dark: oklch(38% 0.09 165);
+  --accent-tint: oklch(94.5% 0.028 165);
+  --on-accent: #fff;
+  --surface-hover: oklch(95.5% 0.008 170);
+
+  /* the pencil-mark vocabulary */
+  --mark-yes: oklch(45% 0.115 160);     /* place here */
+  --mark-no: oklch(44% 0.17 27);        /* ruled out (teacher's red) */
+  --mark-maybe: oklch(44% 0.10 235);    /* candidate (checking-pencil blue) */
+  --scan-tint: oklch(95.5% 0.05 100);   /* chalk-yellow: look along here */
+  --no-tint: oklch(95% 0.025 27);
+  --yes-tint: oklch(93.5% 0.05 160);
+  --maybe-tint: oklch(94.5% 0.035 235); /* faint blue: candidate cells */
+  --uncertain-tint: oklch(95.5% 0.055 90);
+
+  --z-dock: 30;
+
+  --serif: "Newsreader", Georgia, "Times New Roman", serif;
+  --sans: system-ui, "Segoe UI", -apple-system, sans-serif;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.cell:focus-visible { outline-offset: -3px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: .01ms !important;
+    animation-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Windows High Contrast strips backgrounds and box-shadows; carry the hint
+   language with borders and text decoration instead. */
+@media (forced-colors: active) {
+  .cell.hl-target { border: 3px solid Highlight !important; }
+  .cell.hl-candidate { border: 3px double Highlight !important; }
+  /* .cell.hl-source needs no override: its dashed border maps to CanvasText */
+  .cell.hl-unit { border: 1px dotted CanvasText !important; }
+  .cell.hl-elim { border: 1px dashed CanvasText !important; }
+  .cell.uncertain { border: 2px dashed CanvasText !important; }
+  .cell.selected { outline: 3px solid Highlight; }
+  .mark.no { text-decoration: line-through 2px; }
+  .mark.no::after { display: none; }
+}
+
+/* input-method-aware copy: default to desktop wording, swap on touch devices */
+.mobile-only { display: none; }
+@media (hover: none) and (pointer: coarse) {
+  .desktop-only { display: none; }
+  .mobile-only { display: inline; }
+  p.mobile-only { display: block; }
+}
+
+body {
+  margin: 0;
+  font-family: var(--sans);
+  background: var(--bg);
+  color: var(--ink);
+  line-height: 1.55;
+}
+
+/* ---------- masthead ---------- */
+
+header {
+  text-align: center;
+  padding: 30px 16px 14px;
+  border-bottom: 3px double var(--line-heavy);
+  max-width: 1060px;
+  margin: 0 auto;
+}
+header h1 {
+  margin: 0 0 2px;
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 2.1rem;
+  letter-spacing: .01em;
+  text-wrap: balance;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+.logo { color: var(--ink); flex-shrink: 0; }
+.logo-dot { fill: var(--accent); }
+.tagline {
+  margin: 0;
+  color: var(--muted);
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 1.08rem;
+}
+
+main { max-width: 1060px; margin: 0 auto; padding: 24px 16px 60px; }
+
+footer { text-align: center; color: var(--muted); font-size: .85rem; padding: 18px; }
+
+/* ---------- upload ---------- */
+
+#dropzone {
+  margin: 26px auto 0;
+  max-width: 620px;
+  background: var(--card);
+  border: 2px dashed oklch(70% 0.02 170);
+  border-radius: 14px;
+  padding: 52px 28px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+#dropzone:hover, #dropzone.dragging { border-color: var(--accent); background: var(--accent-tint); }
+#dropzone.busy { pointer-events: none; opacity: .6; }
+.dz-icon { color: var(--muted); }
+.dz-main { font-size: 1.2rem; font-weight: 600; margin: 12px 0 6px; text-wrap: balance; }
+.dz-sub { color: var(--muted); margin: 0; }
+.dz-privacy { color: var(--muted); font-size: .85rem; margin: 18px 0 0; font-style: italic; font-family: var(--serif); }
+kbd {
+  background: oklch(93% 0.005 170); border-radius: 4px; padding: 1px 7px;
+  font-family: inherit; font-size: .9em; border: 1px solid var(--line); border-bottom-width: 2px;
+}
+
+.status { text-align: center; font-weight: 600; color: var(--accent-dark); margin: 18px auto 0; max-width: 620px; }
+.status.error { color: var(--mark-no); }
+.status-actions { text-align: center; margin: 10px 0 0; }
+
+/* programmatically focused on arrival; never reached by Tab, so no ring */
+#review-heading:focus { outline: none; }
+
+.manual-line { text-align: center; margin-top: 22px; color: var(--muted); }
+.link-btn {
+  background: none; border: none; color: var(--accent); cursor: pointer;
+  font: inherit; font-weight: 600; text-decoration: underline; padding: 0;
+}
+.link-btn:hover { color: var(--accent-dark); }
+
+/* ---------- banner ---------- */
+
+.banner {
+  background: var(--scan-tint); border: 1px solid oklch(80% 0.09 95); border-radius: 10px;
+  padding: 14px 18px; margin-bottom: 18px;
+  display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap;
+}
+.banner-text { flex: 1 1 260px; min-width: 0; }
+.banner details { margin-top: 10px; }
+.banner summary { cursor: pointer; font-weight: 600; }
+.readback-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  font-size: .92rem;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.banner h2 { margin: 0 0 4px; font-family: var(--serif); font-weight: 600; font-size: 1.15rem; }
+.banner p { margin: 0; }
+.banner .thumb-fig { margin: 0; flex-shrink: 0; }
+.banner #warped-thumb { width: 128px; }
+
+/* ---------- solve layout ---------- */
+
+.solve-layout {
+  display: grid;
+  gap: 24px 28px;
+  grid-template-columns: minmax(320px, 480px) minmax(300px, 1fr);
+  grid-template-areas:
+    "board cta"
+    "board hint"
+    "extras hint";
+  align-items: start;
+}
+#hint-btn { grid-area: cta; }
+.grid-area { grid-area: board; min-width: 0; }
+.hint-side { grid-area: hint; min-width: 0; }
+.board-extras { grid-area: extras; min-width: 0; }
+
+/* ---------- grid ---------- */
+
+.grid-wrap {
+  display: grid;
+  grid-template-columns: 20px 1fr;
+  grid-template-rows: 20px 1fr;
+  max-width: 480px;
+}
+.col-labels {
+  grid-column: 2; grid-row: 1;
+  display: grid; grid-template-columns: repeat(9, 1fr);
+  text-align: center; color: var(--muted); font-size: .75rem;
+}
+.row-labels {
+  grid-column: 1; grid-row: 2;
+  display: grid; grid-template-rows: repeat(9, 1fr);
+  align-items: center; color: var(--muted); font-size: .75rem;
+}
+
+#board {
+  grid-column: 2; grid-row: 2;
+  display: grid;
+  grid-template-columns: repeat(9, 1fr);
+  border: 2.5px solid var(--line-heavy);
+  border-radius: 4px;
+  background: var(--card);
+  overflow: hidden;
+}
+
+.cell {
+  position: relative;
+  aspect-ratio: 1;
+  border: none;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: var(--card);
+  font-family: var(--serif);
+  font-size: clamp(17px, 3.6vw, 28px);
+  font-weight: 600;
+  color: var(--ink);
+  cursor: pointer;
+  padding: 0;
+  transition: background .1s;
+}
+.cell:nth-child(9n) { border-right: none; }
+.cell:nth-child(n+73) { border-bottom: none; }
+.cell.b-right { border-right: 2px solid var(--line-heavy); }
+.cell.b-bottom { border-bottom: 2px solid var(--line-heavy); }
+
+.cell:hover { background: var(--surface-hover); }
+/* graphite, like a pencil resting on the cell; green stays reserved for "the
+   number goes here" so selection and hint never wear the same ring */
+.cell.selected { outline: 3px solid var(--line-heavy); outline-offset: -3px; }
+.cell.given { color: var(--ink); }
+.cell.solved { color: var(--mark-yes); }
+.cell.solved .val { font-style: italic; } /* "written in", vs the printed givens */
+
+/* a digit the helper just wrote in pops into place */
+.cell.just-placed { animation: place-flash 1s ease-out; }
+.cell .val.just-placed {
+  display: inline-block;
+  animation: place-pop .45s cubic-bezier(.22, 1, .36, 1);
+}
+@keyframes place-flash {
+  from { background: var(--yes-tint); }
+  to { background: var(--card); }
+}
+@keyframes place-pop {
+  from { transform: scale(.55); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+.cell.uncertain {
+  background: var(--uncertain-tint);
+  box-shadow: inset 0 0 0 2px oklch(72% 0.1 90);
+}
+.cell.uncertain::after {
+  content: '?';
+  position: absolute;
+  top: 1px; right: 4px;
+  font-family: var(--sans);
+  font-size: .5em;
+  font-weight: 700;
+  color: oklch(48% 0.09 80);
+}
+.cell.conflict { color: var(--mark-no); background: var(--no-tint); }
+
+.cell.hl-unit { background: var(--scan-tint); }
+.cell.hl-elim { background: var(--no-tint); }
+/* blockers: already-placed digits get a neutral dashed ring, so blue can keep
+   its single meaning (candidate spots) */
+.cell.hl-source::before {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border: 2px dashed var(--line-heavy);
+  border-radius: 4px;
+  pointer-events: none;
+}
+/* candidate cells in elimination steps: blue, distinct from the green answer */
+.cell.hl-candidate { background: var(--maybe-tint); box-shadow: inset 0 0 0 3px var(--mark-maybe); }
+.cell.hl-target { background: var(--yes-tint); box-shadow: inset 0 0 0 3px var(--mark-yes); }
+
+/* "Show me where": pulse the target ring once to pull the eye to it */
+.cell.look-here { animation: look-here 1.2s ease-out; }
+@keyframes look-here {
+  0%, 100% { box-shadow: inset 0 0 0 3px var(--mark-yes); }
+  35% { box-shadow: inset 0 0 0 7px var(--mark-yes); }
+}
+
+/* ghost pencil marks drawn by hints; sans for tiny-size clarity */
+.marks {
+  position: absolute;
+  inset: 1px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  pointer-events: none;
+  font-family: var(--sans);
+}
+.marks.single { display: flex; align-items: center; justify-content: center; }
+.mark {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(12px, 2.8vw, 14px);
+  font-weight: 400;
+  line-height: 1;
+}
+/* a single full-cell mark reads like a regular board digit, just colored */
+.marks.single .mark {
+  font-size: clamp(16px, 4.5vw, 25px);
+  font-family: var(--serif);
+  font-weight: 600;
+}
+.mark.yes { color: var(--mark-yes); }
+.mark.maybe { color: var(--mark-maybe); }
+/* full opacity always: at these sizes any transparency drops below AA */
+.mark.no { color: var(--mark-no); }
+.mark.no::after {
+  content: '';
+  position: absolute;
+  width: 125%;
+  height: 2px;
+  background: var(--mark-no);
+  transform: rotate(-40deg);
+  border-radius: 2px;
+}
+/* hand-drawn character: strikes land at slightly different angles */
+.mark.no:nth-child(even)::after { transform: rotate(-48deg); }
+.mark.no:nth-child(3n)::after { transform: rotate(-34deg); }
+
+/* ---------- number pad ---------- */
+
+#numpad {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+  margin-top: 14px;
+  max-width: 480px;
+}
+.pad-btn {
+  min-height: 48px;
+  font-family: var(--serif);
+  font-size: 1.35rem;
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background .12s, border-color .12s;
+}
+.pad-btn:hover:not(:disabled) { background: var(--accent-tint); border-color: var(--accent); }
+.pad-btn:active:not(:disabled) { background: oklch(90% 0.04 165); }
+.pad-btn:disabled { opacity: .4; cursor: default; pointer-events: none; }
+.pad-clear { font-family: var(--sans); font-size: .95rem; font-weight: 600; }
+
+/* ---------- toolbar ---------- */
+
+.toolbar { display: flex; gap: 10px; margin-top: 2px; flex-wrap: wrap; }
+
+.btn {
+  background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+  padding: 9px 16px; min-height: 44px; font: inherit; font-weight: 600; color: var(--ink);
+  cursor: pointer; transition: background .12s, border-color .12s;
+}
+.btn:hover:not(:disabled) { background: var(--surface-hover); border-color: var(--muted); }
+.btn:disabled { opacity: .45; cursor: default; }
+
+.btn-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.btn-primary:hover:not(:disabled) { background: var(--accent-dark); border-color: var(--accent-dark); }
+.btn.confirming { border-color: var(--mark-no); color: var(--mark-no); background: var(--no-tint); }
+
+.btn-big { width: 100%; padding: 15px; font-size: 1.15rem; border-radius: 12px; }
+
+.tip { color: var(--muted); font-size: .85rem; margin-top: 10px; transition: color .25s; }
+.tip.attention { color: var(--accent-dark); font-weight: 600; }
+
+.thumb-fig { margin: 18px 0 0; }
+.thumb-fig figcaption { color: var(--muted); font-size: .85rem; margin-bottom: 6px; }
+#warped-thumb { width: 170px; aspect-ratio: 1; border-radius: 6px; border: 1px solid var(--line); display: block; }
+
+/* ---------- legend (hint panel empty state) ---------- */
+
+.legend-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 14px 18px;
+}
+.legend-card summary {
+  cursor: pointer;
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 1.1rem;
+}
+.legend-card[open] summary { margin-bottom: 12px; }
+.legend { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 9px; }
+.legend li { display: flex; align-items: center; gap: 10px; }
+.swatch {
+  width: 27px; height: 27px;
+  border-radius: 5px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-family: var(--serif); font-weight: 600; font-size: 1.05rem;
+  flex-shrink: 0;
+  border: 1px solid var(--line);
+  position: relative;
+}
+.sw-yes { background: var(--yes-tint); color: var(--mark-yes); border-color: var(--mark-yes); }
+.sw-no { background: var(--no-tint); color: var(--mark-no); }
+/* a thin diagonal stroke across the digit, like the board mark; a hairline
+   light halo keeps the red stroke from merging into the red digit so the
+   swatch reads as "a 5 crossed out" rather than a lone red slash */
+.sw-no::after {
+  content: ''; position: absolute; left: 14%; right: 14%; height: 1.5px;
+  background: var(--mark-no); transform: rotate(-30deg); border-radius: 2px;
+  box-shadow: 0 0 0 1px var(--no-tint);
+}
+.sw-maybe { background: var(--maybe-tint); color: var(--mark-maybe); border-color: var(--mark-maybe); }
+.sw-block { color: var(--ink); background: var(--card); border: 2px dashed var(--line-heavy); }
+.sw-scan { background: var(--scan-tint); }
+.legend-card p { margin: 0; color: var(--muted); font-size: .9rem; }
+
+/* ---------- hint cards ---------- */
+
+#hint-panel { margin-top: 16px; display: flex; flex-direction: column; gap: 14px; }
+
+.hint-card {
+  background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+  padding: 16px 18px;
+}
+.hint-card h3 {
+  margin: 0 0 8px;
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 1.25rem;
+  text-wrap: balance;
+}
+.hint-card p { margin: 0 0 10px; max-width: 65ch; }
+.hint-card p:last-of-type { margin-bottom: 0; }
+.hint-card p.bullet { margin: 0 0 4px 14px; position: relative; }
+.hint-card p.bullet::before { content: "•"; position: absolute; left: -14px; color: var(--accent); }
+.hint-card .btn { margin-top: 14px; }
+
+/* technique name, set like a small editorial kicker above the title */
+.badge {
+  display: block; font-family: var(--serif); font-style: italic;
+  font-size: .95rem; color: var(--muted); margin-bottom: 2px;
+}
+
+.hint-card .fineprint { font-size: .82rem; color: var(--muted); margin: 10px 0 0; }
+.hint-card .teach { font-weight: 600; }
+
+.hint-card details { margin-top: 10px; }
+.hint-card details summary { cursor: pointer; color: var(--muted); font-size: .88rem; font-weight: 600; }
+.hint-card details summary:hover { color: var(--accent-dark); }
+.hint-card details p { font-size: .92rem; margin: 8px 0 0; }
+
+/* semantic cards write their title in the teacher's pen: the same green/red/
+   amber the board marks use, with the border tinted to match */
+.hint-card.place, .hint-card.success { border-color: var(--mark-yes); }
+.hint-card.place h3, .hint-card.success h3 { color: var(--mark-yes); }
+.hint-card.error { border-color: var(--mark-no); }
+.hint-card.error h3 { color: var(--mark-no); }
+.hint-card.warn { border-color: oklch(72% 0.1 90); }
+.hint-card.warn h3 { color: oklch(48% 0.09 80); }
+.hint-card.reveal { border-style: dashed; }
+.hint-card.note { cursor: pointer; }
+.hint-card.note.pinned { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+
+details.presteps {
+  background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px;
+}
+details.presteps summary {
+  cursor: pointer; font-weight: 600; color: var(--accent-dark);
+}
+details.presteps .hint-card { margin-top: 12px; }
+
+/* ---------- mobile hint dock ---------- */
+
+#hint-dock {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: var(--z-dock);
+  display: none;
+  gap: 12px;
+  align-items: center;
+  background: var(--card);
+  border-top: 2px solid var(--line-heavy);
+  padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+  box-shadow: 0 -4px 16px oklch(30% 0.01 170 / .15);
+}
+.dock-text { flex: 1; min-width: 0; }
+#dock-title { display: block; font-family: var(--serif); font-size: 1.02rem; }
+#dock-caption {
+  font-size: .82rem; color: var(--muted);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+#dock-action { flex-shrink: 0; padding: 9px 14px; }
+.dock-close {
+  background: none; border: none; color: var(--muted); font-size: 1rem;
+  padding: 8px; cursor: pointer; flex-shrink: 0; min-height: 44px; min-width: 44px;
+}
+
+/* ---------- small screens ---------- */
+
+@media (max-width: 760px) {
+  /* the primary action leads the stack so it is visible on first paint */
+  .solve-layout {
+    grid-template-columns: 1fr;
+    grid-template-areas: "cta" "board" "hint" "extras";
+    gap: 18px;
+  }
+  #hint-dock:not([hidden]) { display: flex; }
+  body.dock-open main { padding-bottom: 130px; }
+  /* keep scrolled-to cards from landing underneath the fixed dock */
+  body.dock-open .hint-card { scroll-margin-bottom: 140px; }
+}
+
+@media (max-width: 480px) {
+  main { padding: 12px 6px 60px; }
+  header { padding: 22px 12px 12px; }
+  header h1 { font-size: 1.7rem; }
+  .grid-wrap { grid-template-columns: 12px 1fr; grid-template-rows: 12px 1fr; max-width: none; }
+  .col-labels, .row-labels { font-size: .62rem; }
+  #numpad { gap: 6px; }
+}

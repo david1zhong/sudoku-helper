@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Sudoku Helper: find your next number</title>
+<meta name="description" content="Stuck on a sudoku? Snap a photo and get the next number with a clear, visual explanation of how to find it yourself.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36'%3E%3Cg fill='none' stroke='%23223330' stroke-width='2.6'%3E%3Crect x='2' y='2' width='32' height='32' rx='4'/%3E%3Cline x1='12.67' y1='2' x2='12.67' y2='34'/%3E%3Cline x1='23.33' y1='2' x2='23.33' y2='34'/%3E%3Cline x1='2' y1='12.67' x2='34' y2='12.67'/%3E%3Cline x1='2' y1='23.33' x2='34' y2='23.33'/%3E%3C/g%3E%3Ccircle cx='28.6' cy='18' r='3.8' fill='%23226655'/%3E%3C/svg%3E">
+<link rel="preload" href="fonts/newsreader-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/newsreader-latin-italic.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header>
+  <h1>
+    <svg class="logo" width="32" height="32" viewBox="0 0 36 36" aria-hidden="true">
+      <g fill="none" stroke="currentColor" stroke-width="2.2">
+        <rect x="2" y="2" width="32" height="32" rx="3"/>
+        <line x1="12.67" y1="2" x2="12.67" y2="34"/><line x1="23.33" y1="2" x2="23.33" y2="34"/>
+        <line x1="2" y1="12.67" x2="34" y2="12.67"/><line x1="2" y1="23.33" x2="34" y2="23.33"/>
+      </g>
+      <circle cx="28.6" cy="18" r="3.4" class="logo-dot"/>
+    </svg>
+    Sudoku Helper
+  </h1>
+  <p class="tagline">Stuck? Snap your puzzle and I'll show you how to find the next number.</p>
+</header>
+
+<main>
+
+  <!-- Step 1: get the puzzle in -->
+  <section id="view-upload">
+    <div id="dropzone" role="button" tabindex="0" aria-label="Upload a sudoku image">
+      <div class="dz-icon" aria-hidden="true">
+        <svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 7h3l2-2.5h6L17 7h3a1.5 1.5 0 0 1 1.5 1.5V18a1.5 1.5 0 0 1-1.5 1.5H4A1.5 1.5 0 0 1 2.5 18V8.5A1.5 1.5 0 0 1 4 7z"/>
+          <circle cx="12" cy="13" r="3.6"/>
+        </svg>
+      </div>
+      <p class="dz-main"><span class="desktop-only">Drop a photo or screenshot of your sudoku here</span><span class="mobile-only">Snap a photo of your sudoku</span></p>
+      <p class="dz-sub desktop-only">…or <strong>click to browse</strong> your computer, or just press <kbd>Ctrl</kbd>+<kbd>V</kbd> to paste an image</p>
+      <p class="dz-sub mobile-only">Tap here to use your <strong>camera</strong> or photo library</p>
+      <p class="dz-privacy">Read right here in your browser; your photo never leaves your computer. The first photo downloads the digit reader once, then it works offline.</p>
+    </div>
+    <input type="file" id="file-input" accept="image/*" hidden>
+    <p id="upload-status" class="status" aria-live="polite" hidden></p>
+    <p class="status-actions" id="cancel-line" hidden><button id="cancel-btn" class="btn">Cancel</button></p>
+    <p class="manual-line" id="error-manual" hidden><button id="error-manual-btn" class="btn">Type the puzzle in by hand instead</button></p>
+    <p class="manual-line" id="resume-line" hidden>You have a puzzle in progress. <button id="resume-btn" class="link-btn">Keep solving it</button></p>
+    <p class="manual-line">No picture handy? <button id="manual-btn" class="link-btn">Type the puzzle in by hand</button></p>
+  </section>
+
+  <!-- Step 2: review & get hints -->
+  <section id="view-solve" hidden>
+    <div id="review-banner" class="banner" hidden>
+      <div class="banner-text">
+        <h2 id="review-heading" tabindex="-1">Double-check what I read</h2>
+        <p></p>
+        <details id="readback">
+          <summary>Read it back to me, row by row</summary>
+          <ol id="readback-list" class="readback-list"></ol>
+        </details>
+      </div>
+      <figure class="thumb-fig" id="thumb-fig">
+        <figcaption>What I saw:</figcaption>
+        <img id="warped-thumb" alt="Straightened view of your puzzle">
+      </figure>
+    </div>
+
+    <div class="solve-layout">
+      <button id="hint-btn" class="btn btn-primary btn-big">Find my next number</button>
+
+      <div class="grid-area">
+        <div class="grid-wrap">
+          <div class="col-labels">
+            <span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span><span>9</span>
+          </div>
+          <div class="row-labels">
+            <span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span><span>9</span>
+          </div>
+          <div id="board" role="group" aria-label="Sudoku board"></div>
+        </div>
+
+        <p id="conflict-msg" class="status error" aria-live="polite" hidden></p>
+
+        <div id="numpad" role="group" aria-label="Number pad">
+          <button class="pad-btn" data-digit="1">1</button>
+          <button class="pad-btn" data-digit="2">2</button>
+          <button class="pad-btn" data-digit="3">3</button>
+          <button class="pad-btn" data-digit="4">4</button>
+          <button class="pad-btn" data-digit="5">5</button>
+          <button class="pad-btn" data-digit="6">6</button>
+          <button class="pad-btn" data-digit="7">7</button>
+          <button class="pad-btn" data-digit="8">8</button>
+          <button class="pad-btn" data-digit="9">9</button>
+          <button class="pad-btn pad-clear" data-digit="0">Clear</button>
+        </div>
+        <p class="tip" id="numpad-tip">Tap a cell, then use the number pad (or type 1 to 9 on a keyboard). Arrow keys move, Backspace clears.</p>
+      </div>
+
+      <div class="hint-side">
+        <details id="hint-empty" class="legend-card" open>
+          <summary>How hints appear on the board</summary>
+          <ul class="legend">
+            <li><span class="swatch sw-yes">5</span> Green: this is where the number goes</li>
+            <li><span class="swatch sw-no">5</span> Crossed out: that number is ruled out there</li>
+            <li><span class="swatch sw-maybe">5</span> Blue: the only spots a number can still be</li>
+            <li><span class="swatch sw-block">5</span> Dashed ring: a filled-in number doing the blocking</li>
+            <li><span class="swatch sw-scan"></span> Tinted: the row, column or box to scan</li>
+          </ul>
+          <p>One number at a time, with the why. Check the grid matches your puzzle, then press the button.</p>
+        </details>
+        <div id="hint-panel"></div>
+      </div>
+
+      <div class="board-extras">
+        <div class="toolbar">
+          <button id="undo-btn" class="btn">Undo</button>
+          <button id="new-btn" class="btn">New puzzle</button>
+        </div>
+        <div id="thumb-home"></div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<div id="hint-dock" role="region" aria-label="Current hint" hidden>
+  <div class="dock-text">
+    <strong id="dock-title"></strong>
+    <span id="dock-caption"></span>
+  </div>
+  <button id="dock-action" class="btn btn-primary"></button>
+  <button id="dock-close" class="dock-close" aria-label="Hide hint bar">&times;</button>
+</div>
+
+<footer>
+  <p>Everything runs in your browser. The digit reader downloads once; your photos stay on your computer.</p>
+</footer>
+
+<script src="solver.js"></script>
+<script src="extractor.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

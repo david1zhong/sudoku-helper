@@ -1,0 +1,20 @@
+# Editor and IDE settings
+.vscode/
+.idea/
+*.code-workspace
+
+# OS clutter
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Node (the app has no build step; keep these out if anything ever lands)
+node_modules/
+npm-debug.log*
+*.log
+
+# Local-only docs, not part of the shipped app
+PRODUCT.md
+
+# Tests and their generated screenshots are local-only, kept out of the repo
+test/
